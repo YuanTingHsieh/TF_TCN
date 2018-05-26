@@ -96,14 +96,14 @@ def index_generator(n_train, batch_size):
             diff = end_ind - n_train
             toreturn = all_indices[start_ind:end_ind]
             toreturn = np.append(toreturn, all_indices[0:diff])
-            yield batch_idx + 1, toreturn
             start_pos = diff
+            yield batch_idx + 1, toreturn
             break
 
         yield batch_idx + 1, all_indices[start_ind:end_ind]
 
-def train(ep):
-    global batch_size, seq_len, iters, epochs
+def train(ep, sess):
+    global batch_size, seq_len, iters, epochs, total_steps
     total_loss = 0
     start_time = time.time()
     correct = 0
@@ -122,20 +122,21 @@ def train(ep):
         correct += np.sum(p == y)
         counter += p.size
         total_loss += l.mean()
+        total_steps += 1
 
         if (batch_idx > 0 and batch_idx % args.log_interval == 0) or batch_idx == total_batches:
             avg_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            print('| Epoch {:3d} | {:5d}/{:5d} batches | lr {:2.5f} | ms/batch {:5.2f} | '
+            print('| Steps {:5d} | Epoch {:3d} | {:5d}/{:5d} batches | lr {:2.5f} | ms/batch {:5.2f} | '
                   'loss {:5.8f} | accuracy {:5.4f}'.format(
-                ep, batch_idx, n_train // batch_size+1, args.lr, elapsed * 1000 / args.log_interval,
+                total_steps, ep, batch_idx, n_train // batch_size+1, args.lr, elapsed * 1000 / args.log_interval,
                 avg_loss, 100. * correct / counter))
             start_time = time.time()
             total_loss = 0
             correct = 0
             counter = 0
 
-def evaluate():
+def evaluate(sess):
     global batch_size, seq_len, iters, epochs
 
     total_pred = np.zeros(test_y.shape)
@@ -172,6 +173,9 @@ with tf.Session() as sess:
     total_variables = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
     print('Total variables {:5d}'.format(total_variables))
 
+    global total_steps
+    total_steps = 0
+
     for ep in range(1, epochs + 1):
         train(ep, sess)
-    evaluate()
+    evaluate(sess)

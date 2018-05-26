@@ -25,7 +25,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3], str
         # calculate convolutional layer output
         x = tf.nn.bias_add(tf.nn.convolution(x, W, pad, stride, dilation_rates), b)
 
-        #print(x.get_shape())
+        print(x.get_shape())
 
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0,1,2])
@@ -42,7 +42,6 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
     keep_prob = 1.0 - dropout
 
-    #self.input = tf.placeholder(tf.float32, shape=(None, sequence_length, in_channels))
     in_channels = input_layer.get_shape()[-1]
 
     # num_filters is the hidden units in TCN
@@ -55,16 +54,18 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
     # highway connetions or residual connection
     highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters) if in_channels != out_channels else None
-    
+    if highway is None:
+        print("no highway conv")
+
     res = input_layer if highway is None else highway
 
     return tf.nn.relu(dropout2 + res)
 
-def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2, dropout=0.2):       
+def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2, dropout=0.0):       
     num_levels = len(num_channels)
     counters = {}
     for i in range(num_levels):
-        #print(i)
+        print(i)
         dilation_size = 2 ** i
         #if i == 0:
         #    in_channels = num_inputs
