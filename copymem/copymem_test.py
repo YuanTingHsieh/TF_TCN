@@ -108,7 +108,6 @@ def train(ep, sess):
     start_time = time.time()
     correct = 0
     counter = 0
-    total_batches = n_train // batch_size+1
 
     for batch_idx, indices in index_generator(n_train, batch_size):
         #print(batch_idx)
@@ -116,15 +115,14 @@ def train(ep, sess):
         y = train_y[indices]
         x = np.reshape(x, x.shape+ (1,))
         
-        sess.run(update_step, feed_dict={inputs: x, labels: y})
-        p, l = sess.run([predictions, loss], feed_dict={inputs: x, labels: y})
+        _, p, l = sess.run([update_step, predictions, loss], feed_dict={inputs: x, labels: y})
         
         correct += np.sum(p == y)
         counter += p.size
         total_loss += l.mean()
         total_steps += 1
 
-        if (batch_idx > 0 and batch_idx % args.log_interval == 0) or batch_idx == total_batches:
+        if (batch_idx > 0 and batch_idx % args.log_interval == 0):
             avg_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             print('| Steps {:5d} | Epoch {:3d} | {:5d}/{:5d} batches | lr {:2.5f} | ms/batch {:5.2f} | '
@@ -137,7 +135,7 @@ def train(ep, sess):
             counter = 0
 
 def evaluate(sess):
-    global batch_size, seq_len, iters, epochs
+    global batch_size, seq_len
 
     total_pred = np.zeros(test_y.shape)
     total_loss = np.zeros(test_y.shape)
@@ -178,4 +176,4 @@ with tf.Session() as sess:
 
     for ep in range(1, epochs + 1):
         train(ep, sess)
-    evaluate(sess)
+        evaluate(sess)

@@ -17,7 +17,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3], str
         g = get_var_maybe_avg('g', ema, shape=[num_filters], dtype=tf.float32,
                               initializer=tf.constant_initializer(1.), trainable=True)
         b = get_var_maybe_avg('b', ema, shape=[num_filters], dtype=tf.float32,
-                              initializer=tf.constant_initializer(0.), trainable=True)
+                              initializer=None, trainable=True)
 
         # use weight normalization (Salimans & Kingma, 2016)
         W = tf.reshape(g, [1, 1, num_filters]) * tf.nn.l2_normalize(V, [0, 1, 2])
@@ -47,9 +47,11 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
     # num_filters is the hidden units in TCN
     # which is the number of out channels
     conv1 = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
+    #conv1 = layerNormConvolution1d(input_layer, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
     dropout1 = tf.nn.dropout(conv1, keep_prob)
 
     conv2 = weightNormConvolution1d(dropout1, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
+    #conv2 = layerNormConvolution1d(dropout1, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
     dropout2 = tf.nn.dropout(conv2, keep_prob)
 
     # highway connetions or residual connection

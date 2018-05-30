@@ -12,8 +12,8 @@ import time
 parser = argparse.ArgumentParser(description='Sequence Modeling - (Permuted) Sequential MNIST')
 parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='batch size (default: 64)')
-parser.add_argument('--dropout', type=float, default=0.05,
-                    help='dropout applied to layers (default: 0.05)')
+parser.add_argument('--dropout', type=float, default=0.0,
+                    help='dropout applied to layers (default: 0.0)')
 parser.add_argument('--clip', type=float, default=-1,
                     help='gradient clip, -1 means no clip (default: -1)')
 parser.add_argument('--epochs', type=int, default=20,
@@ -47,7 +47,7 @@ steps = 0
 print(args)
 X_train, Y_train, X_test, Y_test = data_generator(DATA_PATH)
 
-labels = tf.placeholder(tf.int32, (batch_size, n_classes))
+labels = tf.placeholder(tf.float32, (batch_size, n_classes))
 inputs = tf.placeholder(tf.float32, (batch_size, seq_length, in_channels))
 
 # Note: We use a very simple setting here (assuming all levels have the same # of channels.
@@ -63,7 +63,8 @@ predictions_one_hot = tf.one_hot(predictions, depth=n_classes, axis=-1)
 loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits= outputs, labels=labels)
 
 lr = args.lr
-optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+learning_rate = tf.placeholder(tf.float32, shape=[])
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 gradients, variables = zip(*optimizer.compute_gradients(loss))
 if args.clip > 0:
     gradients, _ = tf.clip_by_global_norm(gradients, args.clip)
@@ -90,13 +91,13 @@ def index_generator(num_examples, batch_size):
 
         yield batch_idx + 1, all_indices[start_ind:end_ind]
 
-def train(ep, sess):
-    global batch_size, seq_len, iters, epochs, total_steps
+def train(ep, sess, lr):
+    global batch_size, total_steps
     total_loss = 0
     start_time = time.time()
     correct = 0
     counter = 0
-    total_batches = len(X_train) // batch_size+1
+    #total_batches = len(X_train) // batch_size+1
 
     for batch_idx, indices in index_generator(len(X_train), batch_size):
         #print(batch_idx)
@@ -104,10 +105,9 @@ def train(ep, sess):
         y = Y_train[indices]
         x = np.reshape(x, x.shape+ (1,))
         
-        sess.run(update_step, feed_dict={inputs: x, labels: y})
-        p, l = sess.run([predictions_one_hot, loss], feed_dict={inputs: x, labels: y})
+        _, p, l = sess.run([update_step, predictions, loss], feed_dict={inputs: x, labels: y, learning_rate: lr})
         
-        correct += np.sum(p == y)
+        correct += np.sum(p == np.argmax(y, axis=1))
         counter += p.size
         total_loss += l.mean()
 
@@ -132,16 +132,16 @@ def train(ep, sess):
                   'train_loss {:5.8f} | train_accuracy {:5.4f}'.format(
                  total_steps, args.lr, elapsed * 1000 / args.log_interval,
                 avg_loss, 100. * correct / counter))
-            test()
             start_time = time.time()
+            test(sess)
             total_loss = 0
             correct = 0
             counter = 0
 
-def test():
-    global batch_size, seq_len, iters, epochs
+def test(sess):
+    global batch_size
 
-    total_pred = np.zeros(Y_test.shape)
+    total_pred = np.zeros(len(Y_test))
     total_loss = np.zeros(len(Y_test))
     for batch_idx, batch in enumerate(range(0, len(X_test), batch_size)):
         start_idx = batch
@@ -157,7 +157,8 @@ def test():
 
         x = np.reshape(x, x.shape + (1,))
 
-        p, l = sess.run([predictions_one_hot, loss], feed_dict={inputs: x, labels: y})
+        p, l = sess.run([predictions, loss], feed_dict={inputs: x, labels: y})
+
 
         if exclude > 0:
             total_pred[start_idx:end_idx] = p[:-exclude]
@@ -166,7 +167,11 @@ def test():
             total_pred[start_idx:end_idx] = p
             total_loss[start_idx:end_idx] = l
 
-    print('| test_loss {:5.8f} | test_accuracy {:5.4f}'.format(total_loss.mean(), 100. * np.sum(p == y)/p.size ) )
+    correct = np.sum(total_pred == np.argmax(Y_test, axis=1))
+    counter = total_pred.size
+
+    print('| test_loss {:5.8f} | test_accuracy {:5.4f}'.format(
+        total_loss.mean(), 100. * correct / counter ) )
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
@@ -178,6 +183,8 @@ with tf.Session() as sess:
     global total_steps
     total_steps = 0
     for ep in range(1, epochs + 1):
-        train(ep, sess)
+        train(ep, sess, lr)
+        if ep % 10 == 0:
+            lr /= 10
         # could add learning rate decay here as original example
-    test()
+    test(sess)

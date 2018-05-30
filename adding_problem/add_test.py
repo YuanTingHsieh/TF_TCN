@@ -47,16 +47,18 @@ n_classes = 1
 batch_size = args.batch_size
 seq_length = args.seq_len
 epochs = args.epochs
-n_train = 200000
-n_test = 40000
+n_train = 50000
+n_test = 1000
 
 print(args)
 print("Producing data...")
 X_train, Y_train = data_generator(n_train, seq_length)
 X_test, Y_test = data_generator(n_test, seq_length)
 
+print(X_train.shape)
+print(Y_test.shape)
 
-labels = tf.placeholder(tf.int32, (batch_size, n_classes))
+labels = tf.placeholder(tf.float32, (batch_size, n_classes))
 inputs = tf.placeholder(tf.float32, (batch_size, seq_length, in_channels))
 
 # Note: We use a very simple setting here (assuming all levels have the same # of channels.
@@ -65,8 +67,7 @@ kernel_size = args.ksize
 dropout = args.dropout
 outputs = TCN(inputs, n_classes, channel_sizes, seq_length, kernel_size=kernel_size, dropout=dropout)
 # outputs is of size (batch_size, n_classes)
-loss = tf.losses.mean_squared_error(labels= labels,
-    predictions=outputs )
+loss = tf.losses.mean_squared_error(labels= labels, predictions=outputs )
 
 lr = args.lr
 optimizer = tf.train.AdamOptimizer(learning_rate=lr)
@@ -97,67 +98,61 @@ def index_generator(n_train, batch_size):
         yield batch_idx + 1, all_indices[start_ind:end_ind]
 
 def train(epoch, sess):
-    global batch_size, seq_len, iters, epochs
+    global batch_size
     total_loss = 0
     start_time = time.time()
-    correct = 0
-    counter = 0
-    total_batches = n_train // batch_size+1
 
     for batch_idx, indices in index_generator(n_train, batch_size):
         #print(batch_idx)
         x = X_train[indices]
         y = Y_train[indices]
-
-        sess.run(update_step, feed_dict={inputs: x, labels: y})
-        p, l = sess.run([outputs, loss], feed_dict={inputs: x, labels: y})
         
-
-        correct += np.sum(p == y)
-        counter += p.size
+        #sess.run(update_step, feed_dict={inputs: x, labels: y})
+        _, p, l = sess.run([update_step, outputs, loss], feed_dict={inputs: x, labels: y})
+        
         total_loss += l
 
-        if (batch_idx > 0 and batch_idx % args.log_interval == 0) or batch_idx == total_batches:
+        if (batch_idx > 0 and batch_idx % args.log_interval == 0):
             avg_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             print('| Epoch {:3d} | {:5d}/{:5d} batches | lr {:2.5f} | ms/batch {:5.2f} | '
-                  'loss {:5.8f} | accuracy {:5.4f}'.format(
+                  'loss {:5.8f} |'.format(
                 ep, batch_idx, n_train // batch_size+1, args.lr, elapsed * 1000 / args.log_interval,
-                avg_loss, 100. * correct / counter))
+                avg_loss))
             start_time = time.time()
             total_loss = 0
-            correct = 0
-            counter = 0
 
 
-def evaluate():
-    global batch_size, seq_len, iters, epochs
+def evaluate(sess):
+    global batch_size
 
     total_pred = np.zeros(Y_test.shape)
-    total_loss = 0
+    total_loss = []
     for batch_idx, batch in enumerate(range(0, n_test, batch_size)):
         start_idx = batch
         end_idx = batch + batch_size
 
         x = X_test[start_idx:end_idx]
         y = Y_test[start_idx:end_idx]
+        
         exclude = 0
         if len(x) < batch_size:
             exclude = batch_size - len(x)
             x = np.pad(x, ((0, exclude), (0, 0), (0, 0)), 'constant')
             y = np.pad(y, ((0, exclude), (0, 0)), 'constant')
 
-        p, l = sess.run([outputs, loss], feed_dict={inputs: x, labels: y})
+        fuck, p, l = sess.run([labels, outputs, loss], feed_dict={inputs: x, labels: y})
 
         if exclude > 0:
             total_pred[start_idx:end_idx] = p[:-exclude]
-            total_loss += l
+            #total_loss += l
         else:
             total_pred[start_idx:end_idx] = p
-            total_loss += l
+            total_loss.append(l)
     mse = np.mean(np.square(total_pred - Y_test))
-    print('| Loss {:5.8f} | Accuracy {:5.4f}'.format(total_loss.mean(), 100. * np.sum(p == y)/p.size ) )
+    print('| Loss {:5.8f} |'.format(np.mean(total_loss)) )
     print('My MSE Loss {:5.8f} '.format(mse))
+
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
@@ -168,9 +163,8 @@ with tf.Session() as sess:
 
     for ep in range(1, epochs + 1):
         train(ep, sess)
-        if ep % 10 == 0:
-            evaluate()
-    evaluate()
+        evaluate(sess)
+    evaluate(sess)
 
 
 
