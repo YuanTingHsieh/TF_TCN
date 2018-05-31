@@ -9,10 +9,6 @@ import numpy as np
 import tensorflow as tf
 import time
 
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
-
-sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-
 parser = argparse.ArgumentParser(description='Sequence Modeling - The Adding Problem')
 parser.add_argument('--batch_size', type=int, default=32, metavar='N',
                     help='batch size (default: 32)')
@@ -49,15 +45,14 @@ seq_length = args.seq_len
 epochs = args.epochs
 n_train = 50000
 n_test = 1000
+steps = 0
 
 print(args)
 print("Producing data...")
 X_train, Y_train = data_generator(n_train, seq_length)
 X_test, Y_test = data_generator(n_test, seq_length)
 
-print(X_train.shape)
-print(Y_test.shape)
-
+tf.set_random_seed(args.seed)
 labels = tf.placeholder(tf.float32, (batch_size, n_classes))
 inputs = tf.placeholder(tf.float32, (batch_size, seq_length, in_channels))
 
@@ -65,9 +60,12 @@ inputs = tf.placeholder(tf.float32, (batch_size, seq_length, in_channels))
 channel_sizes = [args.nhid]*args.levels
 kernel_size = args.ksize
 dropout = args.dropout
+
 outputs = TCN(inputs, n_classes, channel_sizes, seq_length, kernel_size=kernel_size, dropout=dropout)
 # outputs is of size (batch_size, n_classes)
 loss = tf.losses.mean_squared_error(labels= labels, predictions=outputs )
+tf.summary.scalar('mse', loss)
+merged = tf.summary.merge_all()
 
 lr = args.lr
 optimizer = tf.train.AdamOptimizer(learning_rate=lr)
@@ -98,19 +96,21 @@ def index_generator(n_train, batch_size):
         yield batch_idx + 1, all_indices[start_ind:end_ind]
 
 def train(epoch, sess):
-    global batch_size
+    global batch_size, steps
     total_loss = 0
     start_time = time.time()
 
     for batch_idx, indices in index_generator(n_train, batch_size):
-        #print(batch_idx)
         x = X_train[indices]
         y = Y_train[indices]
         
         #sess.run(update_step, feed_dict={inputs: x, labels: y})
-        _, p, l = sess.run([update_step, outputs, loss], feed_dict={inputs: x, labels: y})
+        summary, _, p, l = sess.run([merged, update_step, outputs, loss],
+            feed_dict={inputs: x, labels: y})
         
         total_loss += l
+        steps += 1
+        train_writer.add_summary(summary, steps)
 
         if (batch_idx > 0 and batch_idx % args.log_interval == 0):
             avg_loss = total_loss / args.log_interval
@@ -141,7 +141,7 @@ def evaluate(sess):
             x = np.pad(x, ((0, exclude), (0, 0), (0, 0)), 'constant')
             y = np.pad(y, ((0, exclude), (0, 0)), 'constant')
 
-        fuck, p, l = sess.run([labels, outputs, loss], feed_dict={inputs: x, labels: y})
+        p, l = sess.run([outputs, loss], feed_dict={inputs: x, labels: y})
 
         if exclude > 0:
             total_pred[start_idx:end_idx] = p[:-exclude]
@@ -150,11 +150,13 @@ def evaluate(sess):
             total_pred[start_idx:end_idx] = p
             total_loss.append(l)
     mse = np.mean(np.square(total_pred - Y_test))
-    print('| Loss {:5.8f} |'.format(np.mean(total_loss)) )
-    print('My MSE Loss {:5.8f} '.format(mse))
+    print('Test MSE Loss {:5.8f} '.format(mse))
 
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+with tf.Session(config=config) as sess:
+    train_writer = tf.summary.FileWriter('./log/train', sess.graph)
 
-with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
 
@@ -164,7 +166,6 @@ with tf.Session() as sess:
     for ep in range(1, epochs + 1):
         train(ep, sess)
         evaluate(sess)
-    evaluate(sess)
 
 
 

@@ -35,6 +35,7 @@ parser.add_argument('--seed', type=int, default=1111,
 parser.add_argument('--permute', action='store_true',
                     help='use permuted MNIST (default: false)')
 args = parser.parse_args()
+print(args)
 
 DATA_PATH = "/home/jimisv/yuanting/TF_TCN/mnist_pixel/MNIST_data/"
 batch_size = args.batch_size
@@ -44,11 +45,17 @@ seq_length = int(784 / in_channels)
 epochs = args.epochs
 steps = 0
 
-print(args)
+np.random.seed(args.seed)
+tf.set_random_seed(args.seed)
+
 X_train, Y_train, X_test, Y_test = data_generator(DATA_PATH)
 
 labels = tf.placeholder(tf.float32, (batch_size, n_classes))
 inputs = tf.placeholder(tf.float32, (batch_size, seq_length, in_channels))
+if args.permute:
+    print("Permute the inputs")
+    permute = np.random.permutation(784)
+    inputs = tf.gather(inputs, permute, axis=1)
 
 # Note: We use a very simple setting here (assuming all levels have the same # of channels.
 channel_sizes = [args.nhid]*args.levels
@@ -56,7 +63,6 @@ kernel_size = args.ksize
 dropout = args.dropout
 outputs = TCN(inputs, n_classes, channel_sizes, seq_length, kernel_size=kernel_size, dropout=dropout)
 predictions = tf.argmax(outputs, axis=-1)
-predictions_one_hot = tf.one_hot(predictions, depth=n_classes, axis=-1)
 
 # outputs is of size (batch_size, n_classes)
 # we only use the last element of sequence length
@@ -128,12 +134,12 @@ def train(ep, sess, lr):
         if (total_steps > 0 and total_steps % args.log_interval == 0):
             avg_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            print('| Steps {:5d} | lr {:2.5f} | ms/batch {:5.2f} | '
+            print('| Train Steps {:5d} | lr {:2.5f} | ms/batch {:5.2f} | '
                   'train_loss {:5.8f} | train_accuracy {:5.4f}'.format(
-                 total_steps, args.lr, elapsed * 1000 / args.log_interval,
+                 total_steps, lr, elapsed * 1000 / args.log_interval,
                 avg_loss, 100. * correct / counter))
             start_time = time.time()
-            test(sess)
+            #test(sess)
             total_loss = 0
             correct = 0
             counter = 0
@@ -170,10 +176,12 @@ def test(sess):
     correct = np.sum(total_pred == np.argmax(Y_test, axis=1))
     counter = total_pred.size
 
-    print('| test_loss {:5.8f} | test_accuracy {:5.4f}'.format(
+    print('\n  test_loss {:5.8f} | test_accuracy {:5.4f}\n'.format(
         total_loss.mean(), 100. * correct / counter ) )
 
-with tf.Session() as sess:
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
 
@@ -187,4 +195,5 @@ with tf.Session() as sess:
         if ep % 10 == 0:
             lr /= 10
         # could add learning rate decay here as original example
+        test(sess)
     test(sess)

@@ -103,7 +103,7 @@ def index_generator(n_train, batch_size):
         yield batch_idx + 1, all_indices[start_ind:end_ind]
 
 def train(ep, sess):
-    global batch_size, seq_len, iters, epochs, total_steps
+    global batch_size, total_steps
     total_loss = 0
     start_time = time.time()
     correct = 0
@@ -135,7 +135,7 @@ def train(ep, sess):
             counter = 0
 
 def evaluate(sess):
-    global batch_size, seq_len
+    global batch_size
 
     total_pred = np.zeros(test_y.shape)
     total_loss = np.zeros(test_y.shape)
@@ -162,9 +162,12 @@ def evaluate(sess):
             total_pred[start_idx:end_idx] = p
             total_loss[start_idx:end_idx] = l
 
-    print('| Loss {:5.8f} | Accuracy {:5.4f}'.format(total_loss.mean(), 100. * np.sum(p == y)/p.size ) )
+    print('| Loss {:5.8f} | Accuracy {:5.4f}'.format(total_loss.mean(),
+        100. * np.sum(total_pred == test_y)/total_pred.size ))
 
-with tf.Session() as sess:
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
 

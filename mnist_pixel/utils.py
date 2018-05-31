@@ -14,4 +14,10 @@ def data_generator(data_path, permuted = False):
     Y_train = mnist.train.labels
     Y_test = mnist.test.labels
 
+    mean = 0.1307
+    std = 0.3081
+
+    X_train = (X_train - mean) / std
+    X_test = (X_test - mean) / std
+
     return X_train, Y_train, X_test, Y_test
