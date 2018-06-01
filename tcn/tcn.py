@@ -8,19 +8,36 @@ import tensorflow as tf
 from .nn import *
 from tensorflow.contrib.framework.python.ops import add_arg_scope
 
+def temporal_padding(x, padding=(1, 1)):
+    """Pads the middle dimension of a 3D tensor.
+    # Arguments
+        x: Tensor or variable.
+        padding: Tuple of 2 integers, how many zeros to
+            add at the start and end of dim 1.
+    # Returns
+        A padded 3D tensor.
+    """
+    assert len(padding) == 2
+    pattern = [[0, 0], [padding[0], padding[1]], [0, 0]]
+    return tf.pad(x, pattern)
+
 @add_arg_scope
-def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3], 
-    stride=[1], pad='SAME', init_scale=1., init=False, ema=None, counters={}):
+def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3,
+    stride=[1], pad='VALID', init_scale=1., init=False, ema=None, counters={}):
     name = get_name('weightnorm_conv', counters)
     with tf.variable_scope(name):
         # currently this part is never used
         if init:
             print("initializing weight norm")
             # data based initialization of parameters
-            V = tf.get_variable('V', filter_size+[int(x.get_shape()[-1]),num_filters], 
+            V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]),num_filters],
                 tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
             V_norm = tf.nn.l2_normalize(V.initialized_value(), [0,1,2])
-            x_init = tf.nn.convolution(x, V_norm, pad, stride, dilation_rates)
+
+            # pad x
+            left_pad = dilation_rate * (filter_size - 1)
+            x = temporal_padding(x, (left_pad, 0))
+            x_init = tf.nn.convolution(x, V_norm, pad, stride, [dilation_rate])
             #x_init = tf.nn.conv2d(x, V_norm, [1]+stride+[1], pad)
             m_init, v_init = tf.nn.moments(x_init, [0,1])
             scale_init = init_scale/tf.sqrt(v_init + 1e-8)
@@ -33,7 +50,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3],
 
         else:
             # size of V is L, Cin, Cout
-            V = tf.get_variable('V', filter_size+[int(x.get_shape()[-1]),num_filters], 
+            V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]),num_filters],
                 tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
             g = tf.get_variable('g', shape=[num_filters], dtype=tf.float32,
                 initializer=tf.constant_initializer(1.), trainable=True)
@@ -45,8 +62,12 @@ def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3],
             # use weight normalization (Salimans & Kingma, 2016)
             W = tf.reshape(g, [1, 1, num_filters]) * tf.nn.l2_normalize(V, [0, 1, 2])
 
+            # pad x for causal convolution
+            left_pad = dilation_rate * (filter_size  - 1)
+            x = temporal_padding(x, (left_pad, 0))
+
             # calculate convolutional layer output
-            x = tf.nn.bias_add(tf.nn.convolution(x, W, pad, stride, dilation_rates), b)
+            x = tf.nn.bias_add(tf.nn.convolution(x, W, pad, stride, [dilation_rate]), b)
 
             print(x.get_shape())
 
@@ -63,12 +84,10 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
     # num_filters is the hidden units in TCN
     # which is the number of out channels
-    conv1 = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [filter_size], [stride], counters=counters, init=init)
-    #conv1 = layerNormConvolution1d(input_layer, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
+    conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
     dropout1 = tf.nn.dropout(conv1, keep_prob)
 
-    conv2 = weightNormConvolution1d(dropout1, out_channels, [dilation_rate], [filter_size], [stride], counters=counters, init=init)
-    #conv2 = layerNormConvolution1d(dropout1, out_channels, [dilation_rate], [filter_size], [stride], counters=counters)
+    conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
     dropout2 = tf.nn.dropout(conv2, keep_prob)
 
     # highway connetions or residual connection
