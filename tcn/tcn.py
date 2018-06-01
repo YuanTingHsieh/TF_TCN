@@ -13,6 +13,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rates, filter_size=[3],
     stride=[1], pad='SAME', init_scale=1., init=False, ema=None, counters={}):
     name = get_name('weightnorm_conv', counters)
     with tf.variable_scope(name):
+        # currently this part is never used
         if init:
             print("initializing weight norm")
             # data based initialization of parameters
@@ -71,8 +72,14 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
     dropout2 = tf.nn.dropout(conv2, keep_prob)
 
     # highway connetions or residual connection
-    highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters, init=init) if in_channels != out_channels else None
-    if highway is None:
+    #highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters, init=init) if in_channels != out_channels else None
+    highway = None
+    if in_channels != out_channels:
+        W_h = tf.get_variable('W_h', [1, int(input_layer.get_shape()[-1]),out_channels], 
+            tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
+        b_h = tf.get_variable('b_h', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
+        highway = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
+    else:
         print("no highway conv")
 
     res = input_layer if highway is None else highway

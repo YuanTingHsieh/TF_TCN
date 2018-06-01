@@ -6,5 +6,5 @@ from tcn.tcn import TemporalConvNet
 
 def TCN(input_layer, output_size, num_channels, sequence_length, kernel_size, dropout):
     tcn = TemporalConvNet(input_layer=input_layer, num_channels=num_channels, sequence_length=sequence_length, kernel_size=kernel_size, dropout=dropout)
-    linear = tf.contrib.layers.fully_connected(tcn, output_size, activation_fn=None)
+    linear = tf.contrib.layers.fully_connected(tcn, output_size, activation_fn=None, weights_initializer=tf.random_normal_initializer(0, 0.01))
     return linear
