@@ -81,29 +81,31 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
     keep_prob = 1.0 - dropout
 
     in_channels = input_layer.get_shape()[-1]
+    name = get_name('temporal_block', counters)
+    with tf.variable_scope(name):
 
-    # num_filters is the hidden units in TCN
-    # which is the number of out channels
-    conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
-    dropout1 = tf.nn.dropout(conv1, keep_prob)
+        # num_filters is the hidden units in TCN
+        # which is the number of out channels
+        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
+        dropout1 = tf.nn.dropout(conv1, keep_prob)
 
-    conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
-    dropout2 = tf.nn.dropout(conv2, keep_prob)
+        conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
+        dropout2 = tf.nn.dropout(conv2, keep_prob)
 
-    # highway connetions or residual connection
-    #highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters, init=init) if in_channels != out_channels else None
-    highway = None
-    if in_channels != out_channels:
-        W_h = tf.get_variable('W_h', [1, int(input_layer.get_shape()[-1]),out_channels], 
-            tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
-        b_h = tf.get_variable('b_h', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
-        highway = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
-    else:
-        print("no highway conv")
+        # highway connetions or residual connection
+        #highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters, init=init) if in_channels != out_channels else None
+        highway = None
+        if in_channels != out_channels:
+            W_h = tf.get_variable('W_h', [1, int(input_layer.get_shape()[-1]),out_channels], 
+                tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
+            b_h = tf.get_variable('b_h', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
+            highway = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
+        else:
+            print("no highway conv")
 
-    res = input_layer if highway is None else highway
+        res = input_layer if highway is None else highway
 
-    return tf.nn.relu(dropout2 + res)
+        return tf.nn.relu(dropout2 + res)
 
 def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2, dropout=0.0, init=False):
     num_levels = len(num_channels)
