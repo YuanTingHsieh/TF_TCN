@@ -70,29 +70,8 @@ def char_tensor(corpus, string):
         tensor[i] = corpus.dict.char2idx[string[i]]
     return tensor
 
-def index_generator(n_data, batch_size):
-    all_indices = np.arange(n_data)
-    start_pos = 0
-    #while True:
-    #    all_indices = np.random.permutation(all_indices)
-    for batch_idx, batch in enumerate(range(start_pos, n_data, batch_size)):
-
-        start_ind = batch
-        end_ind = start_ind + batch_size
-
-        # last batch
-        if end_ind > n_data:
-            diff = end_ind - n_data
-            toreturn = all_indices[start_ind:end_ind]
-            toreturn = np.append(toreturn, all_indices[0:diff])
-            yield batch_idx + 1, toreturn
-            start_pos = diff
-            break
-
-        yield batch_idx + 1, all_indices[start_ind:end_ind]
-
 def batchify(data, batch_size):
-    """The output should have size [L x batch_size], where L could be a long sequence length"""
+    """The output should have size [batch_size x L], where L could be a long sequence length"""
     # Some data cross the boundary is discarded
     # Work out how cleanly we can divide the dataset into batch_size parts (i.e. continuous seqs).
     nbatch = len(data) // batch_size
