@@ -20,7 +20,7 @@ This repository contains the benchmarks to the following tasks, with details exp
   - PennTreebank [SMALL] word-level language modeling (LM)
     
 ## Run
-
+In the root directory of this repo, type the following to run different experiments
 ```
 python3 -m [module_name] [args]
 python3 -m adding_problem.add_test [args]
