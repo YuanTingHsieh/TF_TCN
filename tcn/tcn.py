@@ -21,9 +21,30 @@ def temporal_padding(x, padding=(1, 1)):
     pattern = [[0, 0], [padding[0], padding[1]], [0, 0]]
     return tf.pad(x, pattern)
 
+def attentionBlock(x):
+    """self attention block
+    # Arguments
+        x: Tensor of shape [N, L, Cin]
+    """
+
+    k_size = x.get_shape()[-1].value
+    v_size = x.get_shape()[-1].value
+
+    key = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
+    #query = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
+    value = tf.layers.dense(x, units=v_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01))
+    
+    logits = tf.matmul(key, key, transpose_b=True)
+    logits = logits / np.sqrt(k_size)
+    weights = tf.nn.softmax(logits, name="attention_weights") # 2 10 10
+    output = tf.matmul(weights, value)
+
+    return output
+
+
 @add_arg_scope
 def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3,
-    stride=[1], pad='VALID', init_scale=1., init=False, ema=None, counters={}):
+    stride=[1], pad='VALID', init_scale=1., init=False, gated=False, ema=None, counters={}):
     name = get_name('weightnorm_conv', counters)
     with tf.variable_scope(name):
         # currently this part is never used
@@ -49,6 +70,10 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3,
             return x_init
 
         else:
+            # Gating mechanism (Dauphin 2016 LM with Gated Conv. Nets)
+            if gated:
+                num_filters = num_filters * 2
+
             # size of V is L, Cin, Cout
             V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]),num_filters],
                 tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
@@ -69,14 +94,22 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3,
             # calculate convolutional layer output
             x = tf.nn.bias_add(tf.nn.convolution(x, W, pad, stride, [dilation_rate]), b)
 
-            print(x.get_shape())
+            # GLU
+            if gated:
+                split0, split1 = tf.split(x, num_or_size_splits=2, axis=2)
+                split1 = tf.sigmoid(split1)
+                x = tf.multiply(split0, split1)
+            # ReLU
+            else:
+                # apply nonlinearity
+                x = tf.nn.relu(x)
 
-            # apply nonlinearity
-            x = tf.nn.relu(x)
+            print(x.get_shape())
 
             return x
 
-def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate, counters, dropout=0.0, init=False):
+def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate, counters,
+        dropout, init=False, atten=False, use_highway=False, gated=False):
 
     keep_prob = 1.0 - dropout
 
@@ -86,40 +119,54 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
         # num_filters is the hidden units in TCN
         # which is the number of out channels
-        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
+        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size,
+            [stride], counters=counters, init=init, gated=gated)
         dropout1 = tf.nn.dropout(conv1, keep_prob)
+        if atten:
+            dropout1 = attentionBlock(dropout1)
 
-        conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size, [stride], counters=counters, init=init)
+        conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size,
+            [stride], counters=counters, init=init, gated=gated)
         dropout2 = tf.nn.dropout(conv2, keep_prob)
+        if atten:
+            dropout2 = attentionBlock(dropout2)
 
         # highway connetions or residual connection
-        #highway = weightNormConvolution1d(input_layer, out_channels, [dilation_rate], [1], [stride], counters=counters, init=init) if in_channels != out_channels else None
-        highway = None
-        if in_channels != out_channels:
+        residual = None
+        if use_highway:
             W_h = tf.get_variable('W_h', [1, int(input_layer.get_shape()[-1]),out_channels], 
                 tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
             b_h = tf.get_variable('b_h', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
-            highway = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
-        else:
-            print("no highway conv")
+            H = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
 
-        res = input_layer if highway is None else highway
+            W_t = tf.get_variable('W_t', [1, int(input_layer.get_shape()[-1]),out_channels], 
+                tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
+            b_t = tf.get_variable('b_t', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
+            T = tf.nn.bias_add(tf.nn.convolution(input_layer, W_t, 'SAME'), b_t)
+            T = tf.nn.sigmoid(T)
+            residual = H*T + input_layer * (1.0 - T)
+
+        elif in_channels != out_channels:
+            W_h = tf.get_variable('W_h', [1, int(input_layer.get_shape()[-1]),out_channels], 
+                tf.float32, tf.random_normal_initializer(0, 0.01), trainable=True)
+            b_h = tf.get_variable('b_h', shape=[out_channels], dtype=tf.float32, initializer=None, trainable=True)
+            residual = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
+        else:
+            print("no residual conv")
+
+        res = input_layer if residual is None else residual
 
         return tf.nn.relu(dropout2 + res)
 
-def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2, dropout=0.0, init=False):
+def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2, dropout=tf.constant(0.0, dtype=tf.float32),
+    init=False, atten=False, use_highway=False, use_gated=False):
     num_levels = len(num_channels)
     counters = {}
     for i in range(num_levels):
         print(i)
         dilation_size = 2 ** i
-        #if i == 0:
-        #    in_channels = num_inputs
-        #    input_layer = tf.placeholder(tf.float32, shape=(None, sequence_length, in_channels))
-        #else:
-        #    in_channels = num_channels[i-1]
         out_channels = num_channels[i]
         input_layer = TemporalBlock(input_layer, out_channels, kernel_size, stride=1, dilation_rate=dilation_size,
-                                 counters=counters, dropout=dropout, init=init)
+                                 counters=counters, dropout=dropout, init=init, atten=atten, gated=use_gated)
 
     return input_layer
