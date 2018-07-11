@@ -200,8 +200,8 @@ def main():
 
                 if epoch > 5 and vloss > max(all_losses[-3:]):
                     lr = lr / 10.
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = lr
+                    #for param_group in optimizer.param_groups:
+                    #    param_group['lr'] = lr
                 all_losses.append(vloss)
 
                 if vloss < best_vloss:
