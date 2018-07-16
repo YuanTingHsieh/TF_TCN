@@ -20,7 +20,7 @@ def temporal_padding(x, padding=(1, 1)):
     pattern = [[0, 0], [padding[0], padding[1]], [0, 0]]
     return tf.pad(x, pattern)
 
-def attentionBlock(x):
+def attentionBlock(x, counters, dropout, reuse=False):
     """self attention block
     # Arguments
         x: Tensor of shape [N, L, Cin]
@@ -29,24 +29,38 @@ def attentionBlock(x):
     k_size = x.get_shape()[-1].value
     v_size = x.get_shape()[-1].value
 
-    key = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
-    #query = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
-    value = tf.layers.dense(x, units=v_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01))
-    
-    logits = tf.matmul(key, key, transpose_b=True)
-    logits = logits / np.sqrt(k_size)
-    weights = tf.nn.softmax(logits, name="attention_weights") # N, L, ksize
-    output = tf.matmul(weights, value)
+    name = get_name('attention_block', counters)
+    with tf.variable_scope(name):
+        if reuse:
+            tf.get_variable_scope().reuse_variables()
+        # [N, L, k_size]
+        key = tf.layers.dense(x, units=k_size, activation=None, use_bias=False,
+                              kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        key = tf.nn.dropout(key, 1.0 - dropout)
+        # [N, L, k_size]
+        query = tf.layers.dense(x, units=k_size, activation=None, use_bias=False,
+                                kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        query = tf.nn.dropout(query, 1.0 - dropout)
+        value = tf.layers.dense(x, units=v_size, activation=None, use_bias=False,
+                                kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        value = tf.nn.dropout(value, 1.0 - dropout)
 
-    return output
+        logits = tf.matmul(query, key, transpose_b=True)
+        logits = logits / np.sqrt(k_size)
+        weights = tf.nn.softmax(logits, name="attention_weights")
+        output = tf.matmul(weights, value)
+
+    return output + x
 
 
 @add_arg_scope
 def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride=[1],
                             pad='VALID', init_scale=1., init=False, gated=False,
-                            counters={}):
+                            counters={}, reuse=False):
     name = get_name('weightnorm_conv', counters)
     with tf.variable_scope(name):
+        if reuse:
+            tf.get_variable_scope().reuse_variables()
         # currently this part is never used
         if init:
             print("initializing weight norm")
@@ -114,27 +128,29 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
             return x
 
 def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate, counters,
-                  dropout, init=False, atten=False, use_highway=False, gated=False):
+                  dropout, init=False, use_highway=False, gated=False, reuse=False):
 
     keep_prob = 1.0 - dropout
 
     in_channels = input_layer.get_shape()[-1]
     name = get_name('temporal_block', counters)
     with tf.variable_scope(name):
+        if reuse:
+            tf.get_variable_scope().reuse_variables()
 
         # num_filters is the hidden units in TCN
         # which is the number of out channels
-        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size,
-            [stride], counters=counters, init=init, gated=gated)
+        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate,
+                                        filter_size, [stride], counters=counters,
+                                        init=init, gated=gated, reuse=reuse)
         dropout1 = tf.nn.dropout(conv1, keep_prob)
-        if atten:
-            dropout1 = attentionBlock(dropout1)
 
-        conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size,
-            [stride], counters=counters, init=init, gated=gated)
-        dropout2 = tf.nn.dropout(conv2, keep_prob)
-        if atten:
-            dropout2 = attentionBlock(dropout2)
+        #conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate,
+        #                                filter_size, [stride], counters=counters,
+        #                                init=init, gated=gated, reuse=reuse)
+        #dropout2 = tf.nn.dropout(conv2, keep_prob)
+        #if atten:
+        #    dropout2 = attentionBlock(dropout2, counters=counters, reuse=reuse)
 
         # highway connetions or residual connection
         residual = None
@@ -163,18 +179,26 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
         res = input_layer if residual is None else residual
 
-        return tf.nn.relu(dropout2 + res)
+        return tf.nn.relu(dropout1 + res)
 
 def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2,
                     dropout=tf.constant(0.0, dtype=tf.float32), init=False,
-                    atten=False, use_highway=False, use_gated=False):
+                    atten=False, use_highway=False, use_gated=False, counters={}, reuse=False):
     num_levels = len(num_channels)
     counters = {}
-    for i in range(num_levels):
-        print(i)
-        dilation_size = 2 ** i
-        out_channels = num_channels[i]
-        input_layer = TemporalBlock(input_layer, out_channels, kernel_size, stride=1, dilation_rate=dilation_size,
-                                 counters=counters, dropout=dropout, init=init, atten=atten, gated=use_gated)
+    name = get_name('temporal_conv_net', counters)
+    with tf.variable_scope(name):
+        if reuse:
+            tf.get_variable_scope().reuse_variables()
+        for i in range(num_levels):
+            print(i)
+            dilation_size = 2 ** i
+            out_channels = num_channels[i]
+            input_layer = TemporalBlock(input_layer, out_channels, kernel_size, stride=1,
+                                        dilation_rate=dilation_size, counters=counters,
+                                        dropout=dropout, init=init, gated=use_gated, reuse=reuse)
+            if atten:
+                input_layer = attentionBlock(input_layer, counters=counters, dropout=dropout,
+                                             reuse=reuse)
 
     return input_layer
