@@ -54,7 +54,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
             V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]), num_filters],
                                 tf.float32, tf.random_normal_initializer(0, 0.01),
                                 trainable=True)
-            V_norm = tf.nn.l2_normalize(V.initialized_value(), [0, 1, 2])
+            V_norm = tf.nn.l2_normalize(V.initialized_value(), [0, 1])
 
             # pad x
             left_pad = dilation_rate * (filter_size - 1)
@@ -90,7 +90,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
             # size of input x is N, L, Cin
 
             # use weight normalization (Salimans & Kingma, 2016)
-            W = tf.reshape(g, [1, 1, num_filters]) * tf.nn.l2_normalize(V, [0, 1, 2])
+            W = tf.reshape(g, [1, 1, num_filters]) * tf.nn.l2_normalize(V, [0, 1])
 
             # pad x for causal convolution
             left_pad = dilation_rate * (filter_size  - 1)
