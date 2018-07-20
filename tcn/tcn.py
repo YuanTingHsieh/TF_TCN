@@ -80,10 +80,10 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
 
             # size of V is L, Cin, Cout
             V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]), num_filters],
-                                tf.float32, tf.random_normal_initializer(0, 0.01),
+                                tf.float32, initializer=None,
                                 trainable=True)
             g = tf.get_variable('g', shape=[num_filters], dtype=tf.float32,
-                                initializer=tf.constant_initializer(1.), trainable=True)
+                                initializer=tf.constant_initializer(1.0), trainable=True)
             b = tf.get_variable('b', shape=[num_filters], dtype=tf.float32,
                                 initializer=None, trainable=True)
 
@@ -126,13 +126,17 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
         # which is the number of out channels
         conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size,
             [stride], counters=counters, init=init, gated=gated)
-        dropout1 = tf.nn.dropout(conv1, keep_prob)
+        # set noise shape for spatial dropout
+        # refer to https://colab.research.google.com/drive/1la33lW7FQV1RicpfzyLq9H0SH1VSD4LE#scrollTo=TcFQu3F0y-fy
+        # shape should be [N, 1, C]
+        noise_shape = (input_layer.get_shape()[0], tf.constant(1), input_layer.get_shape()[2])
+        dropout1 = tf.nn.dropout(conv1, keep_prob, noise_shape)
         if atten:
             dropout1 = attentionBlock(dropout1)
 
         conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size,
             [stride], counters=counters, init=init, gated=gated)
-        dropout2 = tf.nn.dropout(conv2, keep_prob)
+        dropout2 = tf.nn.dropout(conv2, keep_prob, noise_shape)
         if atten:
             dropout2 = attentionBlock(dropout2)
 
