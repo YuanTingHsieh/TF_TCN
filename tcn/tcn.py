@@ -45,7 +45,7 @@ def attentionBlock(x):
 def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride=[1],
                             pad='VALID', init_scale=1., init=False, gated=False,
                             counters={}):
-    name = get_name('weightnorm_conv', counters)
+    name = get_name('weightnorm_conv1d', counters)
     with tf.variable_scope(name):
         # currently this part is never used
         if init:
@@ -83,7 +83,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
                                 tf.float32, initializer=None,
                                 trainable=True)
             g = tf.get_variable('g', shape=[num_filters], dtype=tf.float32,
-                                initializer=tf.constant_initializer(1.0), trainable=True)
+                                initializer=tf.constant_initializer(1.), trainable=True)
             b = tf.get_variable('b', shape=[num_filters], dtype=tf.float32,
                                 initializer=None, trainable=True)
 
@@ -124,12 +124,13 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
         # num_filters is the hidden units in TCN
         # which is the number of out channels
-        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate, filter_size,
-            [stride], counters=counters, init=init, gated=gated)
+        conv1 = weightNormConvolution1d(input_layer, out_channels, dilation_rate,
+                                        filter_size, [stride], counters=counters,
+                                        init=init, gated=gated)
         # set noise shape for spatial dropout
         # refer to https://colab.research.google.com/drive/1la33lW7FQV1RicpfzyLq9H0SH1VSD4LE#scrollTo=TcFQu3F0y-fy
         # shape should be [N, 1, C]
-        noise_shape = (input_layer.get_shape()[0], tf.constant(1), input_layer.get_shape()[2])
+        noise_shape = (tf.shape(conv1)[0], tf.constant(1), tf.shape(conv1)[2])
         dropout1 = tf.nn.dropout(conv1, keep_prob, noise_shape)
         if atten:
             dropout1 = attentionBlock(dropout1)
@@ -163,7 +164,7 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
                                   initializer=None, trainable=True)
             residual = tf.nn.bias_add(tf.nn.convolution(input_layer, W_h, 'SAME'), b_h)
         else:
-            print("no residual conv")
+            print("no residual convolution")
 
         res = input_layer if residual is None else residual
 
