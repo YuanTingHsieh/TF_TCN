@@ -5,7 +5,13 @@ from tensorflow.contrib.framework.python.ops import add_arg_scope
 from pathlib import Path
 print('Running' if __name__ == '__main__' else 'Importing', Path(__file__).resolve())
 
-from .nn import *
+def get_name(layer_name, counters):
+    ''' utlity for keeping track of layer names '''
+    if not layer_name in counters:
+        counters[layer_name] = 0
+    name = layer_name + '_' + str(counters[layer_name])
+    counters[layer_name] += 1
+    return name
 
 def temporal_padding(x, padding=(1, 1)):
     """Pads the middle dimension of a 3D tensor.
@@ -20,23 +26,37 @@ def temporal_padding(x, padding=(1, 1)):
     pattern = [[0, 0], [padding[0], padding[1]], [0, 0]]
     return tf.pad(x, pattern)
 
-def attentionBlock(x):
+def attentionBlock(x, counters, dropout):
     """self attention block
     # Arguments
         x: Tensor of shape [N, L, Cin]
+        counters: to keep track of names
+        dropout: add dropout after attention
+    # Returns
+        A tensor of shape [N, L, Cin]
     """
 
     k_size = x.get_shape()[-1].value
     v_size = x.get_shape()[-1].value
 
-    key = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
-    #query = tf.layers.dense(x, units=k_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01)) # [N, L, k_size]
-    value = tf.layers.dense(x, units=v_size, activation=None, use_bias=False, kernel_initializer=tf.random_normal_initializer(0, 0.01))
-    
-    logits = tf.matmul(key, key, transpose_b=True)
-    logits = logits / np.sqrt(k_size)
-    weights = tf.nn.softmax(logits, name="attention_weights") # N, L, ksize
-    output = tf.matmul(weights, value)
+    name = get_name('attention_block', counters)
+    with tf.variable_scope(name):
+        # [N, L, k_size]
+        key = tf.layers.dense(x, units=k_size, activation=None, use_bias=False,
+                              kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        key = tf.nn.dropout(key, 1.0 - dropout)
+        # [N, L, k_size]
+        query = tf.layers.dense(x, units=k_size, activation=None, use_bias=False,
+                                kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        query = tf.nn.dropout(query, 1.0 - dropout)
+        value = tf.layers.dense(x, units=v_size, activation=None, use_bias=False,
+                                kernel_initializer=tf.random_normal_initializer(0, 0.01))
+        value = tf.nn.dropout(value, 1.0 - dropout)
+
+        logits = tf.matmul(query, key, transpose_b=True)
+        logits = logits / np.sqrt(k_size)
+        weights = tf.nn.softmax(logits, name="attention_weights")
+        output = tf.matmul(weights, value)
 
     return output
 
@@ -44,9 +64,25 @@ def attentionBlock(x):
 @add_arg_scope
 def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride=[1],
                             pad='VALID', init_scale=1., init=False, gated=False,
-                            counters={}):
-    name = get_name('weightnorm_conv1d', counters)
+                            counters={}, reuse=False):
+    """a dilated convolution with weight normalization (Salimans & Kingma 2016)
+       Note that init part is NEVER used in our code
+       It relates to the data-dependent init in original paper 
+    # Arguments
+        x: A tensor of shape [N, L, Cin]
+        num_filters: number of convolution filters
+        dilation_rate: dilation rate / holes
+        filter_size: window / kernel width of each filter
+        stride: stride in convolution
+        gated: use gated linear units (Dauphin 2016) as activation
+    # Returns
+        A tensor of shape [N, L, num_filters]
+    """
+    name = get_name('weight_norm_conv1d', counters)
     with tf.variable_scope(name):
+        if reuse:
+            tf.get_variable_scope().reuse_variables()
+
         # currently this part is never used
         if init:
             print("initializing weight norm")
@@ -80,7 +116,7 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
 
             # size of V is L, Cin, Cout
             V = tf.get_variable('V', [filter_size, int(x.get_shape()[-1]), num_filters],
-                                tf.float32, initializer=None,
+                                tf.float32, tf.random_normal_initializer(0, 0.01),
                                 trainable=True)
             g = tf.get_variable('g', shape=[num_filters], dtype=tf.float32,
                                 initializer=tf.constant_initializer(1.), trainable=True)
@@ -115,7 +151,25 @@ def weightNormConvolution1d(x, num_filters, dilation_rate, filter_size=3, stride
 
 def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate, counters,
                   dropout, init=False, atten=False, use_highway=False, gated=False):
+    """temporal block in TCN (Bai 2018)
+    # Arguments
+        input_layer: A tensor of shape [N, L, Cin]
+        out_channels: output dimension
+        filter_size: receptive field of a conv. filter
+        stride: same as what's need in conv. function
+        dilation_rate: holes inbetween
+        counters: to keep track of layer names
+        dropout: prob. to drop weights
 
+        atten: (not in TCN) add self attention block after Conv.
+        use_highway: (not in TCN) use highway as residual connection
+        gated: (not in TCN) use gated linear unit as activation
+
+        init: (NEVER used) data-dependent initialization
+
+    # Returns
+        A tensor of shape [N, L, out_channels]
+    """
     keep_prob = 1.0 - dropout
 
     in_channels = input_layer.get_shape()[-1]
@@ -173,6 +227,22 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2,
                     dropout=tf.constant(0.0, dtype=tf.float32), init=False,
                     atten=False, use_highway=False, use_gated=False):
+    """A stacked dilated CNN architecture described in Bai 2018
+    # Arguments
+        input_layer: Tensor of shape [N, L, Cin]
+        num_channels: # of filters for each CNN layer
+        kernel_size: kernel for every CNN layer
+        dropout: channel dropout after CNN
+
+        atten: (not in TCN) add self attention block after Conv.
+        use_highway: (not in TCN) use highway as residual connection
+        gated: (not in TCN) use gated linear unit as activation
+
+        init: (NEVER used) data-dependent initialization
+
+    # Returns
+        A tensor of shape [N, L, num_channels[-1]]
+    """
     num_levels = len(num_channels)
     counters = {}
     for i in range(num_levels):
