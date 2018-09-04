@@ -185,15 +185,15 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
         # refer to https://colab.research.google.com/drive/1la33lW7FQV1RicpfzyLq9H0SH1VSD4LE#scrollTo=TcFQu3F0y-fy
         # shape should be [N, 1, C]
         noise_shape = (tf.shape(conv1)[0], tf.constant(1), tf.shape(conv1)[2])
-        dropout1 = tf.nn.dropout(conv1, keep_prob, noise_shape)
+        out1 = tf.nn.dropout(conv1, keep_prob, noise_shape)
         if atten:
-            dropout1 = attentionBlock(dropout1)
+            out1 = attentionBlock(out1, counters, dropout)
 
-        conv2 = weightNormConvolution1d(dropout1, out_channels, dilation_rate, filter_size,
+        conv2 = weightNormConvolution1d(out1, out_channels, dilation_rate, filter_size,
             [stride], counters=counters, init=init, gated=gated)
-        dropout2 = tf.nn.dropout(conv2, keep_prob, noise_shape)
+        out2 = tf.nn.dropout(conv2, keep_prob, noise_shape)
         if atten:
-            dropout2 = attentionBlock(dropout2)
+            out2 = attentionBlock(out2, counters, dropout)
 
         # highway connetions or residual connection
         residual = None
@@ -222,7 +222,7 @@ def TemporalBlock(input_layer, out_channels, filter_size, stride, dilation_rate,
 
         res = input_layer if residual is None else residual
 
-        return tf.nn.relu(dropout2 + res)
+        return tf.nn.relu(out2 + res)
 
 def TemporalConvNet(input_layer, num_channels, sequence_length, kernel_size=2,
                     dropout=tf.constant(0.0, dtype=tf.float32), init=False,
