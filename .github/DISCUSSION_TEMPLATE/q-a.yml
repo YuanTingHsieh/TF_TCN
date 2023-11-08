@@ -24,16 +24,11 @@ body:
       label: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
       description: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
       placeholder: "2.3"
-  - type: dropdown
-    id: download
+  - type: input
     attributes:
       label: Operating system
-      options:
-        - Windows
-        - Mac
-        - Ubuntu
-        - CentOS
-        - Other
+      description: Operating system (Ubuntu, MacOS, Windows, etc)
+      placeholder: "Ubuntu 20.04"
     validations:
       required: true
   - type: checkboxes
