@@ -7,16 +7,23 @@ body:
         Please fill out the form so the community can better assist you!
   - type: input
     attributes:
-      label: Python version
-      description: Python version (can use `python3 -V`)
+      label: Python version (`python3 -V`)
+      description: Python version (`python3 -V`)
+      placeholder: 3.8
     validations:
       required: true
   - type: input
     attributes:
-      label: NVFlare version
-      description: NVFlare version (can use `python3 -m pip list | grep "nvflare"`)
+      label: NVFlare version (`python3 -m pip list | grep "nvflare"`)
+      description: NVFlare version (`python3 -m pip list | grep "nvflare"`)
+      placeholder: 2.3.8
     validations:
       required: true
+  - type: input
+    attributes:
+      label: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
+      description: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
+      placeholder: 2.3
   - type: dropdown
     id: download
     attributes:
