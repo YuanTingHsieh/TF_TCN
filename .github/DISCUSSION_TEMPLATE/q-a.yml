@@ -4,52 +4,46 @@ body:
   - type: markdown
     attributes:
       value: |
-        This is text that will show up in the template!
-  - type: textarea
-    id: improvements
+        Please fill out the form so the community can better assist you!
+  - type: input
     attributes:
-      label: Top 3 improvements
-      description: "What are the top 3 improvements we could make to this project?"
-      value: |
-        1.
-        2.
-        3.
-        ...
-      render: bash
+      label: Python version
+      description: Python version (can use `python3 -V`)
     validations:
       required: true
-  - type: markdown
-    attributes:
-      value: |
-        ## Markdown header
-        And some more markdown
   - type: input
-    id: has-id
     attributes:
-      label: Suggestions
-      description: A description about suggestions to help you
+      label: NVFlare version
+      description: NVFlare version (can use `python3 -m pip list | grep "nvflare"`)
     validations:
       required: true
   - type: dropdown
     id: download
     attributes:
-      label: Which area of this project could be most improved?
+      label: Operating system
       options:
-        - Documentation
-        - Pull request review time
-        - Bug fix time
-        - Release cadence
+        - Windows
+        - Mac
+        - Ubuntu
+        - CentOS
+        - Other
     validations:
       required: true
   - type: checkboxes
     attributes:
-      label: Check that box!
+      label: Have you successfully run the following examples?
       options:
-        - label: This one!
-          required: true
-        - label: I won't stop you if you check this one, too
-  - type: markdown
+        - label: hello-numpy-sag with simulator
+        - label: hello-pt with simulator
+        - label: hello-numpy-sag with POC
+        - label: hello-pt with POC
+  - type: textarea
+    id: questions
     attributes:
+      label: Please describe your question
+      description: "Please describe your question. It would be better if you can attach some logs."
       value: |
-        ### The thrilling conclusion
-        _to our template_
+        I run into the following issue and don't know what to do ...
+      render: bash
+    validations:
+      required: true
